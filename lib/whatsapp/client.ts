@@ -4,6 +4,18 @@ function graphUrl(path: string): string {
   return `https://graph.facebook.com/${GRAPH_API_VERSION}/${path}`;
 }
 
+// Meta's dev-mode test recipient list normalizes Argentine numbers to the
+// domestic "15" mobile format (e.g. 54111530186064) instead of the "9"
+// international format the webhook reports as `from` (e.g. 5491130186064).
+// Sending to the wa_id form gets rejected as "not in allowed list" even
+// though it's the same contact. This override only matters while the app is
+// in development mode — once it's a verified business this restriction (and
+// this mapping) goes away.
+function toAllowedRecipientFormat(waId: string): string {
+  const overrides = JSON.parse(process.env.WHATSAPP_TEST_RECIPIENT_OVERRIDES ?? "{}");
+  return overrides[waId] ?? waId;
+}
+
 export async function sendWhatsAppMessage(to: string, text: string): Promise<void> {
   const response = await fetch(graphUrl(`${process.env.PHONE_NUMBER_ID}/messages`), {
     method: "POST",
@@ -13,7 +25,7 @@ export async function sendWhatsAppMessage(to: string, text: string): Promise<voi
     },
     body: JSON.stringify({
       messaging_product: "whatsapp",
-      to,
+      to: toAllowedRecipientFormat(to),
       type: "text",
       text: { body: text },
     }),
