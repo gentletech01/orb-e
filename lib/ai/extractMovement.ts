@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenerativeAI, SchemaType, type Schema } from "@google/generative-ai";
 
 export interface RawExtraction {
@@ -8,22 +7,6 @@ export interface RawExtraction {
   unit: string;
   date: string;
 }
-
-const JSON_SCHEMA = {
-  type: "object",
-  properties: {
-    action: { type: "string", enum: ["buy", "sell", "unknown"] },
-    item: { type: "string" },
-    quantity: { type: "number" },
-    unit: { type: "string" },
-    date: {
-      type: "string",
-      description: "Date in dd/mm/yyyy format, resolved from any relative reference in the text",
-    },
-  },
-  required: ["action", "item", "quantity", "unit", "date"],
-  additionalProperties: false,
-} as const;
 
 const GEMINI_SCHEMA: Schema = {
   type: SchemaType.OBJECT,
@@ -57,28 +40,14 @@ Ejemplos:
 Si no podés determinar un campo, usá "unknown" para action, string vacío para item/unit, o 0 para quantity.`;
 }
 
-async function extractWithClaude(text: string, todayFormatted: string): Promise<RawExtraction> {
-  const client = new Anthropic();
+export async function extractMovement(text: string): Promise<RawExtraction> {
+  const today = new Date();
+  const todayFormatted = `${today.getDate().toString().padStart(2, "0")}/${(
+    today.getMonth() + 1
+  )
+    .toString()
+    .padStart(2, "0")}/${today.getFullYear()}`;
 
-  const response = await client.messages.create({
-    model: "claude-opus-4-8",
-    max_tokens: 512,
-    system: buildSystemPrompt(todayFormatted),
-    messages: [{ role: "user", content: text }],
-    output_config: {
-      format: { type: "json_schema", schema: JSON_SCHEMA },
-    },
-  });
-
-  const block = response.content.find((b) => b.type === "text");
-  if (!block || block.type !== "text") {
-    throw new Error("Claude no devolvió texto interpretable");
-  }
-
-  return JSON.parse(block.text);
-}
-
-async function extractWithGemini(text: string, todayFormatted: string): Promise<RawExtraction> {
   const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
   const model = client.getGenerativeModel({
@@ -92,19 +61,4 @@ async function extractWithGemini(text: string, todayFormatted: string): Promise<
 
   const result = await model.generateContent(text);
   return JSON.parse(result.response.text());
-}
-
-export async function extractMovement(text: string): Promise<RawExtraction> {
-  const today = new Date();
-  const todayFormatted = `${today.getDate().toString().padStart(2, "0")}/${(
-    today.getMonth() + 1
-  )
-    .toString()
-    .padStart(2, "0")}/${today.getFullYear()}`;
-
-  const provider = process.env.AI_PROVIDER === "gemini" ? "gemini" : "claude";
-
-  return provider === "gemini"
-    ? extractWithGemini(text, todayFormatted)
-    : extractWithClaude(text, todayFormatted);
 }

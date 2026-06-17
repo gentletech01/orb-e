@@ -6,10 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "chat": "node scripts/chat-cli.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.104.2",
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.108.2",
     "next": "16.2.9",

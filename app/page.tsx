@@ -2,8 +2,10 @@ import { ChatBot } from "@/components/ChatBot";
 
 export default function Home() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 font-sans">
-      <ChatBot />
+    <div className="min-h-screen bg-gray-50 font-sans">
+      <div className="fixed bottom-6 right-6">
+        <ChatBot />
+      </div>
     </div>
   );
 }

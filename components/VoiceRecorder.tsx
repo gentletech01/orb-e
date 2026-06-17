@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { WebSpeechProvider } from "@/lib/transcription/webSpeechProvider";
+import { GeminiProvider } from "@/lib/transcription/geminiProvider";
 
 interface VoiceRecorderProps {
   listening: boolean;
@@ -12,12 +12,12 @@ interface VoiceRecorderProps {
 }
 
 export function VoiceRecorder({ listening, onStart, onResult, onError, onEnd }: VoiceRecorderProps) {
-  const providerRef = useRef(new WebSpeechProvider());
+  const providerRef = useRef(new GeminiProvider());
 
   function handleStartClick() {
     const provider = providerRef.current;
     if (!provider.isSupported()) {
-      onError("Tu navegador no soporta reconocimiento de voz (probá con Chrome).");
+      onError("Tu navegador no soporta grabación de audio (probá con Chrome).");
       return;
     }
     onStart();
