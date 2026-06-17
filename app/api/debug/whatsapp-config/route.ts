@@ -11,6 +11,8 @@ export function GET() {
     parseError = (err as Error).message;
   }
 
+  const geminiKey = process.env.GEMINI_API_KEY ?? "";
+
   return NextResponse.json({
     hasOverridesVar: typeof raw === "string",
     rawLength: raw?.length ?? 0,
@@ -18,5 +20,8 @@ export function GET() {
     parsedKeys: parsed && typeof parsed === "object" ? Object.keys(parsed) : null,
     hasToken: !!process.env.WHATSAPP_TOKEN,
     hasPhoneNumberId: !!process.env.PHONE_NUMBER_ID,
+    geminiKeyLength: geminiKey.length,
+    geminiKeyPrefix: geminiKey.slice(0, 6),
+    geminiKeySuffix: geminiKey.slice(-6),
   });
 }
