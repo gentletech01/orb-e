@@ -48,7 +48,12 @@ export async function POST(request: NextRequest) {
     const lastMessage = state.messages[state.messages.length - 1];
     await sendWhatsAppMessage(from, lastMessage.text);
   } catch (err) {
-    await sendWhatsAppMessage(from, `Hubo un error: ${(err as Error).message}`);
+    console.error("Error procesando mensaje de WhatsApp:", err);
+    try {
+      await sendWhatsAppMessage(from, `Hubo un error: ${(err as Error).message}`);
+    } catch (sendErr) {
+      console.error("Error mandando el mensaje de error a WhatsApp:", sendErr);
+    }
   }
 
   return NextResponse.json({ ok: true });

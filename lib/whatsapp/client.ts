@@ -12,8 +12,13 @@ function graphUrl(path: string): string {
 // in development mode — once it's a verified business this restriction (and
 // this mapping) goes away.
 function toAllowedRecipientFormat(waId: string): string {
-  const overrides = JSON.parse(process.env.WHATSAPP_TEST_RECIPIENT_OVERRIDES ?? "{}");
-  return overrides[waId] ?? waId;
+  try {
+    const overrides = JSON.parse(process.env.WHATSAPP_TEST_RECIPIENT_OVERRIDES ?? "{}");
+    return overrides[waId] ?? waId;
+  } catch (err) {
+    console.error("WHATSAPP_TEST_RECIPIENT_OVERRIDES inválido:", (err as Error).message);
+    return waId;
+  }
 }
 
 export async function sendWhatsAppMessage(to: string, text: string): Promise<void> {
