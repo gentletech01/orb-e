@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { transcribeAudio } from "@/lib/ai/transcribeAudio";
 import { handleConfirm, handleReject, handleTextInput } from "@/lib/conversation/engine";
 import { downloadWhatsAppMedia, sendWhatsAppMessage } from "@/lib/whatsapp/client";
+import { isDuplicateMessage } from "@/lib/whatsapp/dedup";
 
 export function GET(request: NextRequest) {
   const mode = request.nextUrl.searchParams.get("hub.mode");
@@ -20,6 +21,10 @@ export async function POST(request: NextRequest) {
   const message = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
 
   if (!message) {
+    return NextResponse.json({ ok: true });
+  }
+
+  if (await isDuplicateMessage(message.id)) {
     return NextResponse.json({ ok: true });
   }
 

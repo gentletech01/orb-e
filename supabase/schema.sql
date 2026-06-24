@@ -35,3 +35,16 @@ create table if not exists conversation_sessions (
 -- otherwise the anon key can't upsert/select and the conversation engine
 -- silently falls back to a fresh session every request.
 alter table conversation_sessions disable row level security;
+
+-- WhatsApp (Meta) retries the webhook delivery if our server doesn't respond
+-- fast enough, resending the exact same message id. Without tracking which
+-- ids we already handled, a slow response (e.g. Ollama cold start) causes
+-- the same user message to be processed multiple times, duplicating bot
+-- replies. A unique constraint on message_id is what actually prevents the
+-- race between concurrent/retried requests.
+create table if not exists whatsapp_processed_messages (
+  message_id text primary key,
+  processed_at timestamptz not null default now()
+);
+
+alter table whatsapp_processed_messages disable row level security;
