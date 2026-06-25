@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { transcribeAudio } from "@/lib/ai/transcribeAudio";
 import { handleConfirm, handleReject, handleTextInput } from "@/lib/conversation/engine";
+import { resolveOrCreateByPhone } from "@/lib/profiles/resolveOrCreateByPhone";
 import { downloadWhatsAppMedia, sendWhatsAppMessage } from "@/lib/whatsapp/client";
 import { isDuplicateMessage } from "@/lib/whatsapp/dedup";
 
@@ -31,6 +32,8 @@ export async function POST(request: NextRequest) {
   const from: string = message.from;
 
   try {
+    const sessionId = await resolveOrCreateByPhone(from);
+
     let text: string;
     if (message.type === "audio") {
       const { base64, mimeType } = await downloadWhatsAppMedia(message.audio.id);
@@ -45,10 +48,10 @@ export async function POST(request: NextRequest) {
     const normalized = text.trim().toLowerCase();
     const state =
       normalized === "si" || normalized === "sí" || normalized === "yes"
-        ? await handleConfirm(from)
+        ? await handleConfirm(sessionId)
         : normalized === "no"
-          ? await handleReject(from)
-          : await handleTextInput(from, text);
+          ? await handleReject(sessionId)
+          : await handleTextInput(sessionId, text);
 
     const lastMessage = state.messages[state.messages.length - 1];
     await sendWhatsAppMessage(from, lastMessage.text);

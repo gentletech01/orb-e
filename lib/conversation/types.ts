@@ -1,4 +1,4 @@
-import { ParsedCommand } from "@/types/movement";
+import { ParsedTransaction } from "@/types/transaction";
 
 export type Status = "idle" | "interpreting" | "awaiting_confirmation" | "saving";
 
@@ -11,7 +11,7 @@ export interface ChatMessage {
 export interface SessionState {
   sessionId: string;
   status: Status;
-  pendingCommand: ParsedCommand | null;
+  pendingTransactions: ParsedTransaction[] | null;
   rawText: string | null;
   messages: ChatMessage[];
 }

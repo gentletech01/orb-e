@@ -1,42 +1,29 @@
-import { extractMovement } from "@/lib/ai/extractMovement";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { Action, ParsedCommand } from "@/types/movement";
+import { extractTransactions, normalizeCategory } from "@/lib/ai/extractTransactions";
+import { parseAmount } from "@/lib/ai/parseAmount";
+import { resolveDate } from "@/lib/ai/resolveDate";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { ParsedTransaction, TransactionType } from "@/types/transaction";
 import { loadSession, saveSession } from "./sessionStore";
 import { ChatMessage, SessionState } from "./types";
 
-const ACTION_LABEL: Record<Action, string> = { buy: "Comprar", sell: "Vender" };
+const TYPE_LABEL: Record<TransactionType, string> = { income: "Ingreso", expense: "Gasto" };
 
 function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-function describeCommand(command: ParsedCommand): string {
-  const action = command.action ? ACTION_LABEL[command.action] : "(no detectada)";
-  const item = command.item ? capitalize(command.item) : "(no detectado)";
-  const quantity =
-    command.quantity != null ? `${command.quantity}${command.unit ?? ""}` : "(no detectada)";
+function describeTransactions(transactions: ParsedTransaction[]): string {
+  const lines = transactions.map((t, i) => {
+    const concept = t.concept ? ` - ${capitalize(t.concept)}` : "";
+    return `${i + 1}. ${TYPE_LABEL[t.type]} - $${t.amount.toLocaleString("es-AR")}${concept} (${t.category}) - ${t.date}`;
+  });
 
-  return [
-    "Entendí:",
-    `- Acción: ${action}`,
-    `- Item: ${item}`,
-    `- Cantidad: ${quantity}`,
-    `- Fecha: ${command.date}`,
-    "",
-    "¿Es correcto?",
-  ].join("\n");
+  return ["Entendí:", ...lines, "", "¿Es correcto?"].join("\n");
 }
 
 function toIsoDate(ddmmyyyy: string): string {
   const [day, month, year] = ddmmyyyy.split("/");
   return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-}
-
-function todayFormatted(): string {
-  const today = new Date();
-  return `${today.getDate().toString().padStart(2, "0")}/${(today.getMonth() + 1)
-    .toString()
-    .padStart(2, "0")}/${today.getFullYear()}`;
 }
 
 function appendMessage(state: SessionState, from: ChatMessage["from"], text: string): SessionState {
@@ -53,16 +40,29 @@ export async function handleTextInput(sessionId: string, text: string): Promise<
   state = { ...state, status: "interpreting", rawText: text };
 
   try {
-    const raw = await extractMovement(text);
-    const command: ParsedCommand = {
-      action: raw.action === "unknown" ? null : raw.action,
-      item: raw.item.trim() ? raw.item.trim() : null,
-      quantity: raw.quantity > 0 ? raw.quantity : null,
-      unit: raw.unit.trim() ? raw.unit.trim() : null,
-      date: raw.date || todayFormatted(),
-    };
-    state = { ...state, pendingCommand: command, status: "awaiting_confirmation" };
-    state = appendMessage(state, "bot", describeCommand(command));
+    const raw = await extractTransactions(text);
+
+    if (raw.length === 0) {
+      state = { ...state, status: "idle", pendingTransactions: null };
+      state = appendMessage(
+        state,
+        "bot",
+        "No entendí ningún gasto o ingreso en tu mensaje. Probá repetirlo más claro."
+      );
+      await saveSession(state);
+      return state;
+    }
+
+    const transactions: ParsedTransaction[] = raw.map((t) => ({
+      type: t.type === "income" ? "income" : "expense",
+      amount: parseAmount(t.amountText),
+      category: normalizeCategory(t.category),
+      concept: t.concept?.trim() ?? "",
+      date: resolveDate(t.dateText ?? ""),
+    }));
+
+    state = { ...state, pendingTransactions: transactions, status: "awaiting_confirmation" };
+    state = appendMessage(state, "bot", describeTransactions(transactions));
   } catch (err) {
     state = { ...state, status: "idle" };
     state = appendMessage(state, "bot", `Hubo un error interpretando: ${(err as Error).message}`);
@@ -74,31 +74,31 @@ export async function handleTextInput(sessionId: string, text: string): Promise<
 
 export async function handleConfirm(sessionId: string): Promise<SessionState> {
   let state = await loadSession(sessionId);
-  const command = state.pendingCommand;
+  const transactions = state.pendingTransactions;
 
-  if (!command || !command.action || !command.item || !command.quantity) {
-    state = { ...state, status: "idle", pendingCommand: null };
-    state = appendMessage(
-      state,
-      "bot",
-      "No pude completar todos los datos (acción, item y cantidad). Probá repetirlo más claro."
-    );
+  if (!transactions || transactions.length === 0) {
+    state = { ...state, status: "idle", pendingTransactions: null };
+    state = appendMessage(state, "bot", "No tengo ningún movimiento pendiente para guardar.");
     await saveSession(state);
     return state;
   }
 
   state = { ...state, status: "saving" };
 
-  const supabase = createSupabaseServerClient();
-  const { error } = await supabase.from("movements").insert({
-    action: command.action,
-    item: command.item,
-    quantity: command.quantity,
-    date: toIsoDate(command.date),
-    raw_text: state.rawText,
-  });
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase.from("transactions").insert(
+    transactions.map((t) => ({
+      user_id: sessionId,
+      type: t.type,
+      amount: t.amount,
+      category: t.category,
+      concept: t.concept,
+      date: toIsoDate(t.date),
+      raw_text: state.rawText,
+    }))
+  );
 
-  state = { ...state, status: "idle", pendingCommand: null };
+  state = { ...state, status: "idle", pendingTransactions: null };
   state = error
     ? appendMessage(state, "bot", `No pude guardar: ${error.message}`)
     : appendMessage(state, "bot", "Guardado ✅");
@@ -109,8 +109,8 @@ export async function handleConfirm(sessionId: string): Promise<SessionState> {
 
 export async function handleReject(sessionId: string): Promise<SessionState> {
   let state = await loadSession(sessionId);
-  state = { ...state, status: "idle", pendingCommand: null };
-  state = appendMessage(state, "bot", "Ok, descarté ese registro. Probá grabar de nuevo.");
+  state = { ...state, status: "idle", pendingTransactions: null };
+  state = appendMessage(state, "bot", "Ok, descarté esos movimientos. Probá de nuevo.");
   await saveSession(state);
   return state;
 }

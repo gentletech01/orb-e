@@ -1,4 +1,4 @@
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 /**
  * Devuelve true si este messageId ya fue procesado antes (Meta reintentó el
@@ -6,7 +6,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  * carrera entre requests concurrentes/reintentados, no un check-then-insert.
  */
 export async function isDuplicateMessage(messageId: string): Promise<boolean> {
-  const supabase = createSupabaseServerClient();
+  const supabase = createSupabaseAdminClient();
   const { error } = await supabase
     .from("whatsapp_processed_messages")
     .insert({ message_id: messageId });

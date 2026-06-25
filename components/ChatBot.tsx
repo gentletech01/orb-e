@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { VoiceRecorder } from "./VoiceRecorder";
 import { AudioWaveform } from "./AudioWaveform";
-import { getOrCreateSessionId } from "@/lib/session";
 import { ChatMessage, SessionState, Status } from "@/lib/conversation/types";
 
 async function postConversation(body: Record<string, unknown>): Promise<SessionState> {
@@ -23,16 +22,13 @@ async function postConversation(body: Record<string, unknown>): Promise<SessionS
 export function ChatBot() {
   const [isOpen, setIsOpen] = useState(false);
   const [listening, setListening] = useState(false);
+  const [sending, setSending] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<Status>("idle");
   const [textInput, setTextInput] = useState("");
-  const sessionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const sessionId = getOrCreateSessionId();
-    sessionIdRef.current = sessionId;
-
-    fetch(`/api/conversation?sessionId=${encodeURIComponent(sessionId)}`)
+    fetch("/api/conversation")
       .then((response) => response.json())
       .then((state: SessionState) => {
         setMessages(state.messages);
@@ -51,9 +47,9 @@ export function ChatBot() {
   }
 
   async function sendText(text: string) {
-    if (!sessionIdRef.current) return;
+    setSending(true);
     try {
-      const state = await postConversation({ sessionId: sessionIdRef.current, type: "text", text });
+      const state = await postConversation({ type: "text", text });
       applyState(state);
     } catch (err) {
       setStatus("idle");
@@ -61,6 +57,8 @@ export function ChatBot() {
         ...prev,
         { id: prev.length, from: "bot", text: `Hubo un error: ${(err as Error).message}` },
       ]);
+    } finally {
+      setSending(false);
     }
   }
 
@@ -89,16 +87,26 @@ export function ChatBot() {
   }
 
   async function handleReject() {
-    if (!sessionIdRef.current) return;
-    const state = await postConversation({ sessionId: sessionIdRef.current, type: "reject" });
-    applyState(state);
+    setSending(true);
+    try {
+      const state = await postConversation({ type: "reject" });
+      applyState(state);
+    } finally {
+      setSending(false);
+    }
   }
 
   async function handleConfirm() {
-    if (!sessionIdRef.current) return;
-    const state = await postConversation({ sessionId: sessionIdRef.current, type: "confirm" });
-    applyState(state);
+    setSending(true);
+    try {
+      const state = await postConversation({ type: "confirm" });
+      applyState(state);
+    } finally {
+      setSending(false);
+    }
   }
+
+  const isBusy = sending || status === "interpreting" || status === "saving";
 
   return (
     <div className="flex flex-col items-end gap-3">
@@ -109,8 +117,8 @@ export function ChatBot() {
               🤖
             </div>
             <div className="flex-1">
-              <p className="text-sm font-semibold text-black">Asistente de stock</p>
-              <p className="text-xs text-gray-500">Registrá movimientos por voz</p>
+              <p className="text-sm font-semibold text-black">Asistente financiero</p>
+              <p className="text-xs text-gray-500">Registrá gastos e ingresos por voz</p>
             </div>
           </header>
 
@@ -132,11 +140,26 @@ export function ChatBot() {
                   </span>
                 </div>
               ))}
+              {isBusy && (
+                <div className="flex justify-start">
+                  <span className="flex items-center gap-1 rounded-2xl rounded-bl-sm bg-gray-100 px-3 py-2 text-sm text-gray-400">
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.3s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.15s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400" />
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
           <div className="border-t border-gray-200 px-4 py-3">
-            {status === "awaiting_confirmation" ? (
+            {isBusy ? (
+              <div className="flex justify-center">
+                <button type="button" disabled className="rounded-full bg-blue-600 px-4 py-2 text-sm text-white opacity-50">
+                  {status === "saving" ? "Guardando..." : "Pensando..."}
+                </button>
+              </div>
+            ) : status === "awaiting_confirmation" ? (
               <div className="flex justify-center gap-3">
                 <button
                   type="button"
@@ -153,18 +176,6 @@ export function ChatBot() {
                   No, descartar
                 </button>
               </div>
-            ) : status === "saving" ? (
-              <div className="flex justify-center">
-                <button type="button" disabled className="rounded-full bg-blue-600 px-4 py-2 text-sm text-white opacity-50">
-                  Guardando...
-                </button>
-              </div>
-            ) : status === "interpreting" ? (
-              <div className="flex justify-center">
-                <button type="button" disabled className="rounded-full bg-blue-600 px-4 py-2 text-sm text-white opacity-50">
-                  Interpretando...
-                </button>
-              </div>
             ) : (
               <div className="flex flex-col items-center gap-2">
                 <AudioWaveform active={listening} />
@@ -173,7 +184,7 @@ export function ChatBot() {
                     type="text"
                     value={textInput}
                     onChange={(event) => setTextInput(event.target.value)}
-                    placeholder="Escribí el movimiento..."
+                    placeholder="Escribí el gasto o ingreso..."
                     disabled={listening}
                     className="flex-1 rounded-full border border-gray-300 px-4 py-2 text-sm text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                   />
@@ -184,6 +195,14 @@ export function ChatBot() {
                     onError={handleError}
                     onEnd={handleEnd}
                   />
+                  <button
+                    type="submit"
+                    disabled={listening || !textInput.trim()}
+                    aria-label="Enviar mensaje"
+                    className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-white disabled:opacity-50"
+                  >
+                    ➤
+                  </button>
                 </form>
               </div>
             )}
@@ -194,7 +213,7 @@ export function ChatBot() {
       <button
         type="button"
         onClick={() => setIsOpen((open) => !open)}
-        aria-label={isOpen ? "Cerrar asistente de stock" : "Abrir asistente de stock"}
+        aria-label={isOpen ? "Cerrar asistente financiero" : "Abrir asistente financiero"}
         className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 text-2xl text-white shadow-lg transition-transform hover:scale-105"
       >
         {isOpen ? "✕" : "🤖"}
